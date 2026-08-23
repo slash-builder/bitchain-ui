@@ -1,0 +1,20 @@
+# Node scratch — jsdom for the runtime verification pass is installed to a
+# throwaway dir (per verify-html-prototype.md), never committed here.
+node_modules/
+package-lock.json
+package.json
+
+# macOS
+.DS_Store
+
+# Editor / OS cruft
+*.swp
+*~
+
+# Future Flutter app scaffold (CLUS-29 real build lands here later)
+.dart_tool/
+.packages
+build/
+*.iml
+.flutter-plugins
+.flutter-plugins-dependencies

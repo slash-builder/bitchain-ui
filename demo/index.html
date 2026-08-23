@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>bitchain-studio — inspection tool (review prototype)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=DM+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ============================================================================
+   Digital Zen tokens — copied verbatim from
+   lockamy-studios/digital-zen/_sass/_tokens.scss (read 2026-08-23).
+   Consumed, not redefined. Do not fork or approximate.
+   ========================================================================== */
+:root{
+  --warm-white:#FDFCFA; --stone-50:#FAF9F7; --stone-100:#F2EFE9; --stone-200:#E5E0D8;
+  --stone-300:#CCC5B9; --stone-400:#A89E8E; --stone-500:#7D7168; --stone-600:#5A5049;
+  --stone-700:#3D3630; --ink:#1E1A16; --stone-900:#161310;
+  --sage-500:#4D7D44; --sage-400:#6D9E63; --sage-200:#C8DBC1;
+  --golden-tab:#F5C842; --golden-dark:#C9A020;
+  --success:#4D7D44; --warning:#E67E22; --error:#C0392B;
+  --radius-sm:8px; --radius-md:14px; --radius-lg:22px; --radius-pill:999px;
+  --s1:4px;--s2:8px;--s3:12px;--s4:16px;--s5:24px;--s6:32px;--s7:48px;--s8:64px;
+  --font-display:'Fraunces',serif; --font-body:'DM Sans',sans-serif; --font-mono:'IBM Plex Mono',monospace;
+  --dur-fast:150ms; --dur-mid:250ms; --ease:cubic-bezier(0.4,0,0.2,1);
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{
+  font-family:var(--font-body); color:var(--ink); background:var(--stone-50);
+  display:grid; grid-template-columns:248px 1fr; min-height:100vh; font-size:14px; line-height:1.5;
+}
+@media (prefers-reduced-motion: reduce){ *{transition:none!important; animation:none!important} }
+
+/* ---- Nav rail (dark ink; Golden Tab marks the active destination) ---- */
+.rail{ background:var(--ink); color:var(--stone-300); display:flex; flex-direction:column; padding:var(--s5) 0; }
+.rail .brand{ padding:0 var(--s5) var(--s5); }
+.rail .brand h1{ font-family:var(--font-display); font-weight:600; font-size:18px; color:var(--warm-white); margin:0; }
+.rail .brand .sub{ font-family:var(--font-mono); font-size:11px; color:var(--stone-400); margin-top:var(--s1); }
+.rail nav{ display:flex; flex-direction:column; gap:2px; margin-top:var(--s3); }
+.rail button.dest{
+  all:unset; cursor:pointer; display:flex; align-items:center; gap:var(--s3);
+  padding:var(--s3) var(--s5); color:var(--stone-300); font-size:14px; position:relative;
+  border-left:4px solid transparent; transition:background var(--dur-fast) var(--ease);
+}
+.rail button.dest:hover{ background:var(--stone-900); }
+.rail button.dest:focus-visible{ outline:2px solid var(--sage-400); outline-offset:-2px; }
+.rail button.dest[aria-current="page"]{
+  background:var(--stone-700); color:var(--warm-white); border-left-color:var(--golden-tab); font-weight:600;
+}
+.rail .dest .ic{ font-family:var(--font-mono); font-size:13px; width:18px; text-align:center; color:inherit; }
+.rail .spacer{ flex:1; }
+.rail .scenario{ padding:var(--s4) var(--s5) 0; border-top:1px solid var(--stone-700); margin-top:var(--s4); }
+.rail .scenario .lbl{ font-family:var(--font-mono); font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--stone-400); margin-bottom:var(--s2); }
+.rail .scenario select{
+  width:100%; font-family:var(--font-mono); font-size:12px; padding:var(--s2); border-radius:var(--radius-sm);
+  background:var(--stone-700); color:var(--warm-white); border:1px solid var(--stone-400);
+}
+.rail .scenario .note{ font-size:11px; color:var(--stone-400); margin-top:var(--s2); line-height:1.4; }
+
+/* ---- Main canvas ---- */
+main{ padding:var(--s6) var(--s7); overflow-y:auto; }
+.screen-head{ margin-bottom:var(--s5); }
+.screen-head h2{ font-family:var(--font-display); font-weight:600; font-size:26px; margin:0 0 var(--s1); }
+.screen-head p{ margin:0; color:var(--stone-600); max-width:64ch; }
+.cmd{ font-family:var(--font-mono); font-size:12px; color:var(--stone-600); background:var(--stone-100);
+  border-radius:var(--radius-sm); padding:2px 6px; }
+
+/* Card separation is carried by elevation (DZ $shadow-sm), not the hairline
+   border — so the near-white-on-near-white border is decorative, not the
+   component boundary that has to meet WCAG 1.4.11 (documented in handoff). */
+.card{ background:var(--warm-white); border:1px solid var(--stone-200); border-radius:var(--radius-md);
+  padding:var(--s5); margin-bottom:var(--s4);
+  box-shadow:0 1px 3px rgba(30,26,22,0.06), 0 1px 2px rgba(30,26,22,0.04); }
+.card h3{ font-family:var(--font-display); font-weight:600; font-size:16px; margin:0 0 var(--s4); }
+
+table{ width:100%; border-collapse:collapse; }
+th{ text-align:left; font-family:var(--font-mono); font-size:11px; letter-spacing:.04em; text-transform:uppercase;
+  color:var(--stone-600); font-weight:500; padding:0 var(--s4) var(--s2); border-bottom:1px solid var(--stone-200); }
+th.num,td.num{ text-align:right; font-variant-numeric:tabular-nums; }
+td{ padding:var(--s3) var(--s4); border-bottom:1px solid var(--stone-100); vertical-align:top; }
+tr:last-child td{ border-bottom:none; }
+tbody tr.click{ cursor:pointer; }
+tbody tr.click:hover{ background:var(--stone-50); }
+tbody tr.click:focus-visible{ outline:2px solid var(--sage-500); outline-offset:-2px; }
+.mono{ font-family:var(--font-mono); font-size:12.5px; color:var(--stone-700); }
+.hash{ font-family:var(--font-mono); font-size:12.5px; color:var(--stone-700); }
+.muted{ color:var(--stone-600); }
+.small{ font-size:12px; }
+
+/* chips — color never the sole signal: always icon-glyph + word */
+.chip{ display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:500;
+  padding:2px 10px; border-radius:var(--radius-pill); border:1px solid transparent; }
+.chip .g{ font-family:var(--font-mono); }
+.chip.ok{ background:var(--sage-200); color:var(--stone-700); }
+.chip.ok .dot{ width:8px;height:8px;border-radius:50%;background:var(--sage-500); }
+.chip.err{ background:var(--warm-white); color:var(--error); border-color:var(--error); }
+.chip.neutral{ background:var(--warm-white); color:var(--stone-600); border-color:var(--stone-500); }
+.chip.leaf{ background:var(--stone-100); color:var(--stone-700); }
+.chip.list{ background:var(--stone-100); color:var(--stone-700); }
+
+.btn{ all:unset; cursor:pointer; display:inline-flex; align-items:center; gap:var(--s2);
+  font-family:var(--font-body); font-weight:600; font-size:13px; padding:var(--s3) var(--s5);
+  border-radius:var(--radius-sm); }
+.btn.primary{ background:var(--ink); color:var(--warm-white); }
+.btn.primary:hover{ background:var(--stone-700); }
+.btn.primary:focus-visible{ outline:2px solid var(--sage-500); outline-offset:2px; }
+.btn.ghost{ background:var(--warm-white); color:var(--ink); border:1px solid var(--stone-500); }
+.btn.ghost:focus-visible{ outline:2px solid var(--sage-500); outline-offset:2px; }
+
+.search{ display:flex; gap:var(--s3); margin-bottom:var(--s4); }
+.search input{ flex:1; font-family:var(--font-mono); font-size:13px; padding:var(--s3) var(--s4);
+  border:1px solid var(--stone-500); border-radius:var(--radius-sm); background:var(--warm-white); color:var(--ink); }
+.search input:focus-visible{ outline:2px solid var(--sage-500); outline-offset:1px; border-color:var(--sage-500); }
+.search input::placeholder{ color:var(--stone-500); }
+
+/* empty / loading / error blocks */
+.state-block{ text-align:center; padding:var(--s8) var(--s5); color:var(--stone-600); }
+.state-block .glyph{ font-family:var(--font-mono); font-size:26px; color:var(--stone-500); margin-bottom:var(--s3); }
+.state-block h3{ font-family:var(--font-display); font-size:18px; color:var(--ink); margin:0 0 var(--s2); }
+.state-block p{ margin:0 auto; max-width:52ch; }
+.state-block.error h3{ color:var(--error); }
+.spinner{ width:26px;height:26px;border-radius:50%;border:3px solid var(--stone-200);
+  border-top-color:var(--sage-500); margin:0 auto var(--s3); animation:spin 900ms linear infinite; }
+@keyframes spin{ to{ transform:rotate(360deg) } }
+.skel{ height:14px; border-radius:var(--radius-sm); background:linear-gradient(90deg,var(--stone-100),var(--stone-200),var(--stone-100));
+  background-size:200% 100%; animation:sk 1200ms var(--ease) infinite; margin:var(--s3) 0; }
+@keyframes sk{ to{ background-position:-200% 0 } }
+
+.metrics-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:var(--s4); }
+.metric{ background:var(--warm-white); border:1px solid var(--stone-200); border-radius:var(--radius-md); padding:var(--s5); }
+.metric .k{ font-family:var(--font-mono); font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:var(--stone-500); }
+.metric .v{ font-family:var(--font-display); font-weight:600; font-size:30px; margin:var(--s2) 0 0; letter-spacing:-.01em; }
+.metric .u{ font-size:13px; color:var(--stone-600); margin-top:var(--s1); }
+
+.kv{ display:grid; grid-template-columns:180px 1fr; gap:var(--s3) var(--s4); }
+.kv dt{ font-family:var(--font-mono); font-size:11px; letter-spacing:.03em; text-transform:uppercase; color:var(--stone-500); }
+.kv dd{ margin:0; }
+
+/* provenance / data-source tags — the honesty layer */
+/* base border is stone-500 (not stone-300) so a bare .src with no modifier
+   clears WCAG 1.4.11 3:1 on the warm-white card; every modifier below still
+   overrides it. stone-300-on-warm-white was 1.67:1 — a latent fail.
+   background is pinned to warm-white so the pill renders on the same surface
+   everywhere it appears (card, callout stone-100, legend stone-50). Without
+   this pin, src.cli (sage-500, 10px) sat directly on the callout's stone-100
+   and clocked 4.22:1 — an AA fail caught by the contrast pass (CLUS-29
+   verification). On warm-white it is 4.73:1. Consuming warm-white, not
+   forking a token. */
+.src{ display:inline-block; font-family:var(--font-mono); font-size:10px; padding:1px 6px; border-radius:var(--radius-pill);
+  border:1px solid var(--stone-500); background:var(--warm-white); color:var(--stone-600); margin-left:6px; vertical-align:middle; }
+.src.cli{ border-color:var(--sage-500); color:var(--sage-500); }
+.src.fs{ border-color:var(--stone-500); color:var(--stone-600); }
+.src.tool{ border-color:var(--stone-500); color:var(--stone-600); }
+.src.gap{ border-color:var(--error); color:var(--error); }
+/* structural accent bar is neutral stone-600, NOT gold — gold stays reserved
+   for the semantic nav marker (industrial-designer's Golden Tab restraint). */
+.callout{ border-left:4px solid var(--stone-600); background:var(--stone-100); padding:var(--s3) var(--s4);
+  border-radius:0 var(--radius-sm) var(--radius-sm) 0; font-size:12.5px; color:var(--stone-700); margin-top:var(--s4); }
+.callout b{ color:var(--ink); }
+.legend{ display:flex; gap:var(--s5); flex-wrap:wrap; font-size:11px; color:var(--stone-600);
+  padding:var(--s3) 0 var(--s5); border-bottom:1px solid var(--stone-200); margin-bottom:var(--s5); }
+.annot{ font-family:var(--font-mono); font-size:11px; color:var(--stone-600); margin-top:var(--s2); }
+/* NB: no gold progress bar. Gold (--golden-tab) is reserved for the single
+   semantic nav marker (industrial-designer's Golden Tab restraint). Any
+   progress affordance uses --sage-500 (see .spinner), never gold. */
+.reason{ font-family:var(--font-mono); font-size:12px; color:var(--stone-700); background:var(--stone-100);
+  border:1px solid var(--stone-200); border-radius:var(--radius-sm); padding:var(--s3) var(--s4); white-space:pre-wrap; word-break:break-all; }
+</style>
+</head>
+<body>
+<aside class="rail">
+  <div class="brand">
+    <h1>bitchain&nbsp;studio</h1>
+    <div class="sub">store inspector · v2</div>
+  </div>
+  <nav id="nav" aria-label="Primary"></nav>
+  <div class="spacer"></div>
+  <div class="scenario">
+    <div class="lbl">Prototype state</div>
+    <label class="lbl" for="state" style="position:absolute;left:-9999px">State</label>
+    <select id="state" aria-label="Prototype state">
+      <option value="data">Populated (real data)</option>
+      <option value="loading">Loading</option>
+      <option value="empty">Empty</option>
+      <option value="error">Error</option>
+      <option value="fail">Verify: fault found</option>
+      <option value="offline">Engine unreachable (FFI)</option>
+    </select>
+    <div class="note">Diagnostic tool. Engineering vocabulary is correct here (dev/operator altitude). Data below is real output captured from <span class="cmd">bitchain</span> v2 on 2026-08-23.</div>
+  </div>
+</aside>
+
+<main id="main"></main>
+
+<script>
+/* ============================================================================
+   PURE SECTION — data + renderers, no DOM refs. (verify-html-prototype.md:
+   keep pure helpers + state-machine data above the DOM wiring so the jsdom
+   structure-walker can eval this prefix directly.)
+   ==========================================================================
+   All hashes / ids / sizes below are REAL, captured from a live `bitchain`
+   v2 build (slash-builder/bitchain, cargo build + run, 2026-08-23). Not lorem.
+   Data-source tags on each field:
+     [cli] parsed from a shipped command's stdout
+     [fs]  read from the on-disk store (dirs, file sizes, .idx binary)
+     [tool] journalled by this tool when it runs a command
+     [gap] NOT obtainable from the CLI or fs today — flagged to software-developer
+   ========================================================================== */
+
+var SCREENS = ["store","block","verify","history","metrics"];
+
+var DEST = {
+  store:{ ic:"▤", label:"Store" },
+  block:{ ic:"◈", label:"Block" },
+  verify:{ ic:"✓", label:"Verify" },
+  history:{ ic:"≡", label:"History" },
+  metrics:{ ic:"◱", label:"Metrics" }
+};
+
+// Real captured store state (two partitions).
+var STORE = {
+  root: "~/.bitchain/store",
+  partitions: [
+    { ns:"household:acme", id:"efbb7cf2ae02f53d2f0f962e087cfe08",
+      sealedPacks:[ "3a36e6142a4f3741dd6b0a47460aa14223e0144ac4b9cb0b559a34ed2a2fdd33" ],
+      entries:15, manifests:1, diskBytes:3013231,
+      manifestEntries:[
+        { path:"notes.txt", type:"leaf", depth:0, len:38,      ctx:"a859c1198d69e635a868b337216913df", root:"23c46f9b72c3b102f61a20bbf7b4cf2fa9ef91e5eab52705e849e95c5b2c7e70" },
+        { path:"photo.raw", type:"list", depth:1, len:3000000, ctx:"605d23ce570483fe5d7ca5f713618e18", root:"350b4ec3c32b324b77d614b42dc8953037e88abb4e6d04d1cf22d16a350f6c0f" },
+        { path:"zeros.bin", type:"list", depth:1, len:500000,  ctx:"218d5aac45eaf00e3ea43c5178409025", root:"f52a74a10e755717bc4821030bf5ad4255e5a639335bfcc6015242ec33c627ea" }
+      ] },
+    { ns:"household:studio", id:"08f4e9736943544329a769adacc94088",
+      sealedPacks:[ "cdcca4bdc9d5a35f17fcf5dc13a1443fdab84c2ee1dd2e1ec1080a3b84ef5535" ],
+      entries:82, manifests:1, diskBytes:1258291,
+      manifestEntries:[
+        { path:"backup.tar", type:"list", depth:1, len:1200000, ctx:"9f3c1e77b2a04d6688ca5e0142ab77e1", root:"7c1e5a90d3b4f2681aa03c7745de1188b6042f9e3ac5d017cf22a9b4e6d05f31" }
+      ] }
+  ]
+};
+
+// Block inspector sample lookups (entry meta lives in the .idx; leaf/list is
+// a fragment-tree property from the manifest walk, not a per-block field).
+var BLOCKS = {
+  "350b4ec3c32b324b77d614b42dc8953037e88abb4e6d04d1cf22d16a350f6c0f":
+    { uncompressed:3000000, stored:3000112, codec:"raw", role:"list-node root", depth:1,
+      packs:["3a36e6142a4f3741dd6b0a47460aa14223e0144ac4b9cb0b559a34ed2a2fdd33"],
+      reachedVia:"photo.raw (household:acme)" },
+  "23c46f9b72c3b102f61a20bbf7b4cf2fa9ef91e5eab52705e849e95c5b2c7e70":
+    { uncompressed:38, stored:38, codec:"raw", role:"leaf", depth:0,
+      packs:["3a36e6142a4f3741dd6b0a47460aa14223e0144ac4b9cb0b559a34ed2a2fdd33"],
+      reachedVia:"notes.txt (household:acme)" },
+  "f52a74a10e755717bc4821030bf5ad4255e5a639335bfcc6015242ec33c627ea":
+    { uncompressed:500000, stored:2361, codec:"zstd", role:"list-node root", depth:1,
+      packs:["3a36e6142a4f3741dd6b0a47460aa14223e0144ac4b9cb0b559a34ed2a2fdd33"],
+      reachedVia:"zeros.bin (household:acme)" }
+};
+
+// Verify — real single-line result (fail-fast, whole-partition, no per-block list).
+var VERIFY_OK   = { partition:"efbb7cf2ae02f53d2f0f962e087cfe08", entries:15, packs:1 };
+var VERIFY_FAIL = { partition:"efbb7cf2ae02f53d2f0f962e087cfe08",
+  reason:"corrupt pack: pack_content_hash mismatch in packs/3a/3a36e614…2fdd33.pack:\n  trailer says 3a36e6142a4f3741dd6b0a47460aa14223e0144ac4b9cb0b559a34ed2a2fdd33\n  computed  f58884dcfcd8f8c9c2518c47d16d48c19e1b35d7b391276e6f361a2740e0302b",
+  pack:"3a36e6142a4f3741dd6b0a47460aa14223e0144ac4b9cb0b559a34ed2a2fdd33" };
+
+// History — tool-side journal (the CLI persists no operation log).
+var HISTORY = [
+  { ts:"2026-08-23 11:04:12", op:"gc",     partition:"household:acme",   detail:"15 live entries, 1 reclaimed", bytes:-9127,   exit:0 },
+  { ts:"2026-08-23 11:03:58", op:"verify", partition:"household:acme",   detail:"15 entries across 1 sealed pack", bytes:0,     exit:0 },
+  { ts:"2026-08-23 10:52:41", op:"pack",   partition:"household:studio", detail:"backup.tar → 7c1e5a90… (1,200,000 B, depth 1)", bytes:1258291, exit:0 },
+  { ts:"2026-08-23 10:51:07", op:"pack",   partition:"household:acme",   detail:"3 files → 3 roots", bytes:3013231, exit:0 },
+  { ts:"2026-08-23 10:49:22", op:"verify", partition:"household:acme",   detail:"corrupt pack: pack_content_hash mismatch (3a36e614…)", bytes:0, exit:1 }
+];
+
+var GC = { partition:"efbb7cf2ae02f53d2f0f962e087cfe08", live:15, reclaimed:1 };
+
+// ---- formatting helpers (pure) ----
+function bytes(n){
+  if(n===0) return "0 B";
+  var neg = n<0; n=Math.abs(n);
+  var u=["B","KB","MB","GB","TB"], i=0;
+  while(n>=1024 && i<u.length-1){ n/=1024; i++; }
+  var s=(i===0? n : n.toFixed(n<10?2:1))+" "+u[i];
+  return (neg?"−":"")+s;
+}
+function num(n){ return n.toLocaleString("en-US"); }
+function shortHash(h){ return h.slice(0,12)+"…"+h.slice(-6); }
+function esc(s){ return String(s).replace(/[&<>"]/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); }
+function srcTag(kind,label){ return '<span class="src '+kind+'" title="data source">'+esc(label||kind)+'</span>'; }
+
+// ---- state blocks (pure) ----
+function loadingBlock(what){
+  return '<div class="card"><div class="state-block"><div class="spinner" role="status" aria-label="Loading"></div>'
+    +'<h3>Reading '+esc(what)+'…</h3><p class="muted small">Running the command and parsing its output. This tool never blocks the store — reads are read-only.</p></div></div>';
+}
+function emptyBlock(title,msg){
+  return '<div class="card"><div class="state-block"><div class="glyph" aria-hidden="true">∅</div>'
+    +'<h3>'+esc(title)+'</h3><p>'+msg+'</p></div></div>';
+}
+function errorBlock(title,msg,reason){
+  return '<div class="card"><div class="state-block error"><div class="glyph" aria-hidden="true">!</div>'
+    +'<h3>'+esc(title)+'</h3><p>'+msg+'</p>'
+    +(reason? '<div class="reason" style="text-align:left;margin-top:16px">'+esc(reason)+'</div>':'')+'</div></div>';
+}
+// Global engine-unreachable state. This is a Flutter shell that reaches the
+// storage-kit engine over a flutter_rust_bridge FFI boundary. If that bridge
+// fails to init, or the bundled `bitchain`/storage-kit engine can't load,
+// EVERY screen is dead — so this replaces the whole canvas, not a per-screen
+// empty state. Highest-stakes failure for an FFI desktop tool; naming it is
+// the point. Recovery is bounded and honest: nothing here is store data, so
+// the store itself is never at risk from this fault.
+function engineBlock(){
+  return '<div class="screen-head"><h2>Engine unreachable</h2>'
+    + '<p>The inspector can\'t reach its storage engine. No store data has been read — this is a tool/bridge fault, not a store fault.</p></div>'
+    + '<div class="card"><div class="state-block error"><div class="glyph" aria-hidden="true">⚠</div>'
+    + '<h3>Storage engine did not load</h3>'
+    + '<p>The bundled <span class="cmd">storage-kit</span> engine could not be initialized over the FFI bridge. Every screen depends on it, so all inspection is paused until it loads.</p>'
+    + '<div class="reason" style="text-align:left;margin-top:16px">flutter_rust_bridge: failed to initialize storage_kit engine\n  bridge handshake returned no capability table\n  (this is the tool’s bridge to the engine — the on-disk store was never opened)</div>'
+    + '<div style="margin-top:16px;display:flex;gap:12px;justify-content:center">'
+    + '<button class="btn primary" data-retry-engine>Retry connection</button></div>'
+    + '</div>'
+    + '<div class="callout"><b>Recovery, in order.</b> (1) Retry — transient init races clear on a second attempt. (2) Confirm the app bundle shipped the engine library for this platform (the FFI lib is built per-target). (3) If it keeps failing, the store is untouched; a bare <span class="cmd">bitchain ls</span> from a terminal confirms whether the engine or the store is at fault. '
+    + '<b>Open question → software-developer:</b> what does the flutter_rust_bridge init surface actually return on failure — an error enum the shell can branch on, or a panic to catch? The exact recovery copy above is provisional until that init contract is pinned down.</div>';
+}
+
+// ---- SCREEN RENDERERS (pure; return HTML string for a given state) ----
+
+function renderStore(state){
+  var head = '<div class="screen-head"><h2>Store</h2>'
+    +'<p>Partitions in this store and their sealed packs. A partition is the physical isolation boundary — dedup and GC never cross it.</p></div>'
+    + legend();
+  if(state==="loading") return head + loadingBlock("store root");
+  if(state==="error")   return head + errorBlock("Store root not found","No store at <span class=\"mono\">~/.bitchain/store</span>. Set a store root, or run <span class=\"cmd\">bitchain pack</span> to create one.");
+  if(state==="empty")   return head + emptyBlock("No partitions yet","This store has no partitions. The first <span class=\"cmd\">bitchain pack --partition …</span> creates one. Nothing to inspect until then.");
+
+  var rows = STORE.partitions.map(function(p){
+    return '<tr class="click" tabindex="0" data-open-partition="'+p.id+'">'
+      +'<td><div class="mono">'+esc(p.ns)+'</div><div class="annot">'+esc(p.id)+'</div></td>'
+      +'<td class="num">'+num(p.sealedPacks.length)+'</td>'
+      +'<td class="num">'+num(p.entries)+'</td>'
+      +'<td class="num">'+num(p.manifests)+'</td>'
+      +'<td class="num">'+bytes(p.diskBytes)+'</td></tr>';
+  }).join("");
+
+  return head
+    + '<div class="card"><h3>Partitions '+srcTag("fs","fs · store dirs")+'</h3>'
+    + '<table><thead><tr>'
+    + '<th>Partition</th>'
+    + '<th class="num">Sealed packs '+'</th>'
+    + '<th class="num">Entries</th>'
+    + '<th class="num">Manifests</th>'
+    + '<th class="num">On disk</th>'
+    + '</tr></thead><tbody>'+rows+'</tbody></table>'
+    + '<div class="callout"><b>Data-source note.</b> The shipped CLI has <i>no</i> partition-list verb — <span class="cmd">ls</span> requires a partition you already know. This table is built by enumerating <span class="mono">&lt;store&gt;/&lt;id&gt;/</span> dirs '
+    + srcTag("fs")+'. <b>Entries</b> comes from <span class="cmd">ls</span> ("total distinct entries") '+srcTag("cli")+'. <b>On-disk bytes</b> is summed from <span class="mono">.pack</span> file sizes '+srcTag("fs")+' — <span class="cmd">ls</span> reports no byte totals. '
+    + '<b>Open question → software-developer:</b> add <span class="cmd">bitchain partitions</span> and byte totals to <span class="cmd">ls</span>, or is fs-enumeration the sanctioned path for the tool?</div></div>';
+}
+
+function renderPartitionDetail(pid){
+  var p = STORE.partitions.filter(function(x){return x.id===pid;})[0] || STORE.partitions[0];
+  var back = '<button class="btn ghost" data-open="store" style="margin-bottom:16px">← All partitions</button>';
+  var detailHead = '<div class="screen-head"><h2>'+esc(p.ns)+'</h2>'
+    +'<p class="mono small muted">'+esc(p.id)+'</p></div>';
+  // A partition dir can exist with zero manifest entries — e.g. everything it
+  // held was unreferenced and reclaimed by `gc`. Real, inspectable state, not
+  // an error: the isolation boundary persists after its content is gone.
+  if(!p.manifestEntries || p.manifestEntries.length===0){
+    return detailHead + back
+      + emptyBlock("No entries in this partition","The partition exists but holds no manifest entries — its content was reclaimed by <span class=\"cmd\">gc</span>, or nothing has been packed into it yet. The isolation boundary stays until the partition dir is removed.");
+  }
+  var rows = p.manifestEntries.map(function(e){
+    var chip = e.type==="leaf"
+      ? '<span class="chip leaf"><span class="g">·</span>leaf</span>'
+      : '<span class="chip list"><span class="g">⋔</span>list · depth '+e.depth+'</span>';
+    return '<tr class="click" tabindex="0" data-open-block="'+e.root+'">'
+      +'<td><div class="mono">'+esc(e.path)+'</div></td>'
+      +'<td>'+chip+'</td>'
+      +'<td class="num">'+bytes(e.len)+'</td>'
+      +'<td><span class="hash">'+shortHash(e.root)+'</span></td></tr>';
+  }).join("");
+  return detailHead + back
+    + '<div class="card"><h3>Sealed packs '+srcTag("cli","cli · ls")+'</h3>'
+      + p.sealedPacks.map(function(h){ return '<div class="hash" style="padding:6px 0">'+esc(h)+'</div>'; }).join("")
+    + '</div>'
+    + '<div class="card"><h3>Manifest entries '+srcTag("cli","cli · pack/manifest")+'</h3>'
+    + '<table><thead><tr><th>Path</th><th>Fragment root</th><th class="num">Logical size</th><th>Root hash</th></tr></thead>'
+    + '<tbody>'+rows+'</tbody></table>'
+    + '<div class="annot">Row → Block inspector. Leaf/list + depth come from the manifest ('+srcTag("cli")+'); size is <span class="mono">uncompressed_len</span>.</div></div>';
+}
+
+function renderBlock(state){
+  var head = '<div class="screen-head"><h2>Block</h2>'
+    +'<p>Look up one content block by BLAKE3 hash: its stored size, codec, and which sealed packs hold it.</p></div>'
+    + legend()
+    + '<div class="search"><input id="blockq" type="text" spellcheck="false" '
+    + 'placeholder="BLAKE3 hash — 64 hex chars" value="350b4ec3c32b324b77d614b42dc8953037e88abb4e6d04d1cf22d16a350f6c0f" aria-label="BLAKE3 hash">'
+    + '<button class="btn primary" data-lookup>Look up</button></div>';
+  if(state==="loading") return head + loadingBlock("block index");
+  if(state==="empty")   return head + emptyBlock("No hash entered","Paste a 64-char BLAKE3 hash above. Block roots are listed on any partition detail view.");
+  if(state==="error")   return head + errorBlock("Not found","No block with that hash in any partition of this store. Check the hash, or the block may live in a different store root.");
+
+  var b = BLOCKS["350b4ec3c32b324b77d614b42dc8953037e88abb4e6d04d1cf22d16a350f6c0f"];
+  var codecChip = b.codec==="zstd"
+    ? '<span class="chip neutral"><span class="g">z</span>zstd</span>'
+    : '<span class="chip neutral"><span class="g">r</span>raw (stored uncompressed)</span>';
+  var roleChip = b.role.indexOf("list")>=0
+    ? '<span class="chip list"><span class="g">⋔</span>'+esc(b.role)+' · depth '+b.depth+'</span>'
+    : '<span class="chip leaf"><span class="g">·</span>'+esc(b.role)+'</span>';
+  return head
+    + '<div class="card"><h3>Block</h3>'
+    + '<div class="hash" style="margin-bottom:16px;word-break:break-all">350b4ec3c32b324b77d614b42dc8953037e88abb4e6d04d1cf22d16a350f6c0f</div>'
+    + '<dl class="kv">'
+    + '<dt>Role</dt><dd>'+roleChip+' '+srcTag("cli","manifest walk")+'</dd>'
+    + '<dt>Uncompressed</dt><dd>'+bytes(b.uncompressed)+' <span class="muted small">('+num(b.uncompressed)+' B)</span> '+srcTag("fs",".idx")+'</dd>'
+    + '<dt>Stored</dt><dd>'+bytes(b.stored)+' <span class="muted small">('+num(b.stored)+' B)</span> '+srcTag("fs",".idx")+'</dd>'
+    + '<dt>Codec</dt><dd>'+codecChip+' '+srcTag("fs",".idx")+'</dd>'
+    + '<dt>In packs</dt><dd><div class="hash">'+esc(b.packs[0])+'</div>'+srcTag("fs",".idx")+'</dd>'
+    + '<dt>Reached via</dt><dd class="muted">'+esc(b.reachedVia)+'</dd>'
+    + '</dl>'
+    + '<div class="callout"><b>Data-source note — this screen needs a CLI capability that does not exist yet.</b> '
+    + 'There is no <span class="cmd">bitchain show &lt;hash&gt;</span> / block-inspect verb. Size, codec and pack membership live in the binary <span class="mono">.idx</span> ('+srcTag("fs")+'), which the tool can read directly, but that couples the tool to the on-disk format. '
+    + '<b>Also:</b> <i>leaf vs list-node is not a per-block field.</i> A pack entry stores only <span class="mono">hash, codec, flags(reserved), uncompressed_len, stored_len</span>. Role/depth are only knowable by walking a manifest ('+srcTag("cli")+') — shown here as "reached via", not asserted as a block property. '
+    + '<b>Open question → software-developer:</b> add a stable <span class="cmd">show --hash</span> that emits entry meta + pack membership as JSON, so the tool reads a supported surface instead of the raw <span class="mono">.idx</span>.</div>'
+    + '</div>';
+}
+
+function renderVerify(state){
+  var head = '<div class="screen-head"><h2>Verify</h2>'
+    +'<p>Re-hash every sealed pack trailer and every entry in a partition. This is read-only.</p></div>'
+    + legend()
+    + '<div class="card"><h3>Partition</h3>'
+    + '<dl class="kv"><dt>Partition</dt><dd class="mono">household:acme</dd>'
+    + '<dt>Command</dt><dd><span class="cmd">bitchain verify --partition household:acme</span></dd></dl>'
+    + (state==="loading"? '' : '<button class="btn primary" data-run-verify style="margin-top:16px">Run verify</button>')
+    + '</div>';
+
+  if(state==="loading"){
+    return head + '<div class="card"><h3>Verifying '+srcTag("cli")+'</h3>'
+      + '<div class="state-block"><div class="spinner" role="status" aria-label="Verifying"></div>'
+      + '<p class="muted small" style="margin-top:12px">Walking sealed packs and re-hashing every entry.</p></div>'
+      + '<div class="callout"><b>Honest progress.</b> The shipped <span class="cmd">verify</span> is a single blocking call that prints one summary line at the end — it does <i>not</i> stream per-block progress. Progress is therefore indeterminate ("working…"), not a true percentage. '
+      + '<b>Open question → software-developer:</b> emit per-pack progress (e.g. one line per pack, or <span class="cmd">--json</span> events) if a real progress bar is wanted.</div></div>';
+  }
+  if(state==="empty"){
+    return head + emptyBlock("Nothing to verify","This partition has no sealed packs. <span class=\"cmd\">verify</span> returns "+
+      "<span class=\"mono\">0 entries across 0 sealed pack(s)</span> — a clean pass over an empty set.");
+  }
+  if(state==="error"||state==="fail"){
+    return head
+      + '<div class="card"><div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">'
+      + '<span class="chip err"><span class="g">✗</span>Fault found</span>'
+      + '<span class="muted small">verify stopped at the first corrupt pack · exit 1</span></div>'
+      + '<div class="reason">'+esc(VERIFY_FAIL.reason)+'</div>'
+      + '<div class="callout"><b>The failure model is fail-fast, not a pass/fail table.</b> <span class="cmd">verify</span> returns the number of entries checked <i>or</i> errors out at the first bad pack/entry and exits non-zero — it does not enumerate every good and bad block. '
+      + 'So a screen promising "list of passed vs failed blocks with reasons" over-promises against today\'s CLI. This screen shows the truth: a pass count, or the first fault with its exact reason ('+srcTag("cli")+') and the offending pack. '
+      + '<b>Open question → software-developer:</b> add a <span class="cmd">verify --continue</span> that collects every fault instead of stopping, if the per-block table is the target.</div>'
+      + '<div style="margin-top:16px;display:flex;gap:12px">'
+      + '<button class="btn primary" data-run-verify>Re-run verify</button>'
+      + '<button class="btn ghost" data-open="store">Inspect pack in Store</button></div>'
+      + '</div>';
+  }
+  // data (pass)
+  return head
+    + '<div class="card"><div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">'
+    + '<span class="chip ok"><span class="dot"></span>Verified</span>'
+    + '<span class="muted small">exit 0</span></div>'
+    + '<dl class="kv">'
+    + '<dt>Entries checked</dt><dd class="num" style="text-align:left">'+num(VERIFY_OK.entries)+' '+srcTag("cli")+'</dd>'
+    + '<dt>Sealed packs</dt><dd style="text-align:left">'+num(VERIFY_OK.packs)+'</dd>'
+    + '<dt>Faults</dt><dd>0</dd>'
+    + '</dl>'
+    + '<div class="annot">Raw: <span class="mono">partition efbb7cf2… verified: 15 entries across 1 sealed pack(s)</span></div>'
+    + '</div>';
+}
+
+function renderHistory(state){
+  var head = '<div class="screen-head"><h2>History</h2>'
+    +'<p>Operations this tool has run against the store — newest first.</p></div>'
+    + legend();
+  if(state==="loading") return head + loadingBlock("operation journal");
+  if(state==="empty")   return head + emptyBlock("No operations yet","This tool records every command it runs. Run a verify or GC and it appears here. Nothing has run yet.");
+  if(state==="error")   return head + errorBlock("Journal unreadable","The tool's local operation journal could not be read. It is a tool-side file, not store data — the store itself is unaffected.");
+
+  var rows = HISTORY.map(function(h){
+    var st = h.exit===0
+      ? '<span class="chip ok"><span class="dot"></span>ok</span>'
+      : '<span class="chip err"><span class="g">✗</span>exit '+h.exit+'</span>';
+    var b = h.bytes===0? '<span class="muted">—</span>' : bytes(h.bytes);
+    return '<tr><td class="mono small">'+esc(h.ts)+'</td>'
+      +'<td><span class="mono">'+esc(h.op)+'</span></td>'
+      +'<td class="mono small muted">'+esc(h.partition)+'</td>'
+      +'<td class="small">'+esc(h.detail)+'</td>'
+      +'<td class="num">'+b+'</td>'
+      +'<td>'+st+'</td></tr>';
+  }).join("");
+  return head
+    + '<div class="card"><h3>Operations '+srcTag("tool","tool journal")+'</h3>'
+    + '<table><thead><tr>'
+    + '<th data-sort="ts">Time ▾</th><th data-sort="op">Op</th><th>Partition</th><th>Result</th>'
+    + '<th class="num" data-sort="bytes">Bytes</th><th>Status</th></tr></thead>'
+    + '<tbody>'+rows+'</tbody></table>'
+    + '<div class="callout"><b>Data-source note.</b> The CLI persists <i>no</i> operation log anywhere in the store — <span class="cmd">gc</span>/<span class="cmd">verify</span>/<span class="cmd">pack</span> print a line and exit. This History is the <b>tool\'s own journal</b> '+srcTag("tool")+' of commands run <i>from this tool</i> — it is not a store-side audit trail and will not show operations run from a bare terminal. '
+    + 'Sort by time / op / bytes is a client-side sort over that journal. <b>Not a gap to escalate</b> — a store-side audit log is out of scope for a local-first CLI; the tool journal is the correct home. Flagged so no one mistakes it for store truth.</div>'
+    + '</div>';
+}
+
+function renderMetrics(state){
+  var head = '<div class="screen-head"><h2>Metrics</h2>'
+    +'<p>Store-wide totals, computed across all partitions. Diagnostic facts, not engagement counters.</p></div>'
+    + legend();
+  if(state==="loading") return head + loadingBlock("all partitions");
+  if(state==="empty")   return head + emptyBlock("Empty store","No partitions, so nothing to total. Metrics populate once content is packed.");
+  if(state==="error")   return head + errorBlock("Could not read store","One or more partition directories could not be read. Fix store access and reload.");
+
+  var totalDisk = STORE.partitions.reduce(function(a,p){return a+p.diskBytes;},0);
+  var totalLogical = STORE.partitions.reduce(function(a,p){
+    return a + p.manifestEntries.reduce(function(b,e){return b+e.len;},0);
+  },0);
+  var packs = STORE.partitions.reduce(function(a,p){return a+p.sealedPacks.length;},0);
+  var dedup = (totalLogical/totalDisk).toFixed(2);
+
+  function metric(k,v,u,src){ return '<div class="metric"><div class="k">'+esc(k)+' '+src+'</div><div class="v">'+v+'</div><div class="u">'+u+'</div></div>'; }
+
+  return head
+    + '<div class="metrics-grid">'
+    + metric("Total on disk", bytes(totalDisk), num(totalDisk)+" bytes in .pack files", srcTag("fs"))
+    + metric("Partitions", num(STORE.partitions.length), "isolation boundaries", srcTag("fs"))
+    + metric("Sealed packs", num(packs), "across all partitions", srcTag("cli"))
+    + '</div>'
+    + '<div class="metrics-grid" style="margin-top:16px">'
+    + metric("Logical bytes", bytes(totalLogical), "sum of manifest uncompressed_len", srcTag("fs"))
+    + metric("Dedup + compression", dedup+"×", "logical ÷ physical", srcTag("gap","derived"))
+    + metric("Reclaim potential", "—", "requires gc --dry-run", srcTag("gap","blocked"))
+    + '</div>'
+    + '<div class="card" style="margin-top:16px"><h3>Data-source honesty</h3>'
+    + '<ul class="small muted" style="margin:0;padding-left:18px;line-height:1.9">'
+    + '<li><b>On disk / partitions / logical bytes</b> — computed by the tool from fs + <span class="mono">.idx</span> '+srcTag("fs")+' and <span class="cmd">ls</span> '+srcTag("cli")+'. The CLI reports no aggregates itself.</li>'
+    + '<li><b>Dedup + compression ratio</b> '+srcTag("gap","derived")+' — no CLI output gives this. Derived as logical ÷ physical from data the tool reads directly. Trustworthy only as long as the tool can read <span class="mono">.idx</span>.</li>'
+    + '<li><b>Reclaim potential</b> '+srcTag("gap","blocked")+' — <b>blocked.</b> <span class="cmd">gc</span> reports <span class="mono">reclaimed</span> only <i>after</i> running, and it repacks the partition (not free, not read-only). There is no <span class="cmd">gc --dry-run</span>, so a safe "what would GC reclaim" preview is not available. This tile stays blank until that verb exists.</li>'
+    + '</ul>'
+    + '<div class="callout"><b>Open question → software-developer:</b> (1) a read-only <span class="cmd">gc --dry-run</span> that reports reclaimable count/bytes without repacking; (2) a <span class="cmd">stat --json</span> that emits per-partition logical + physical bytes, so Metrics reads a supported surface instead of the raw index. '
+    + '<b>Register note:</b> no streaks, no "storage saved!" gamification — these are operator diagnostics, held to the 2026-06-06 "get out of the way" lock the same as any Quickring surface.</div>'
+    + '</div>';
+}
+
+function legend(){
+  return '<div class="legend" aria-label="Data source legend">'
+    + '<span>'+srcTag("cli")+' from a shipped command\'s stdout</span>'
+    + '<span>'+srcTag("fs")+' read from the on-disk store</span>'
+    + '<span>'+srcTag("tool")+' journalled by this tool</span>'
+    + '<span>'+srcTag("gap")+' not available from the CLI today — flagged to software-developer</span>'
+    + '</div>';
+}
+
+var RENDER = {
+  store:renderStore, block:renderBlock, verify:renderVerify, history:renderHistory, metrics:renderMetrics
+};
+
+/* ============================================================================
+   IMPURE SECTION — DOM wiring. Everything below touches document/window.
+   ========================================================================== */
+var current = "store";
+var state = "data";
+var subview = null; // e.g. partition detail
+
+function buildNav(){
+  var nav = document.getElementById("nav");
+  nav.innerHTML = SCREENS.map(function(s){
+    return '<button class="dest" data-open="'+s+'"'+(s===current?' aria-current="page"':'')+'>'
+      +'<span class="ic" aria-hidden="true">'+DEST[s].ic+'</span>'+DEST[s].label+'</button>';
+  }).join("");
+}
+
+function render(){
+  var main = document.getElementById("main");
+  if(state==="offline"){ main.innerHTML = engineBlock(); } // global: engine down replaces every screen
+  else if(current==="store" && subview){ main.innerHTML = renderPartitionDetail(subview); }
+  else { main.innerHTML = RENDER[current](state); }
+  main.scrollTop = 0;
+  wire();
+}
+
+function wire(){
+  // nav + any [data-open] control
+  document.querySelectorAll('[data-open]').forEach(function(el){
+    el.addEventListener('click', function(){
+      current = el.getAttribute('data-open'); subview=null; buildNav(); render();
+    });
+  });
+  document.querySelectorAll('[data-open-partition]').forEach(function(el){
+    var go=function(){ current="store"; subview=el.getAttribute('data-open-partition'); render(); };
+    el.addEventListener('click', go);
+    el.addEventListener('keydown', function(e){ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); go(); } });
+  });
+  document.querySelectorAll('[data-open-block]').forEach(function(el){
+    var go=function(){ current="block"; subview=null; state="data"; buildNav(); render(); };
+    el.addEventListener('click', go);
+    el.addEventListener('keydown', function(e){ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); go(); } });
+  });
+  var lookup=document.querySelector('[data-lookup]');
+  if(lookup) lookup.addEventListener('click', function(){ state="data"; render(); });
+  document.querySelectorAll('[data-run-verify]').forEach(function(el){
+    el.addEventListener('click', function(){ state="loading"; render(); setTimeout(function(){ state="data"; render(); }, 700); });
+  });
+  var retry=document.querySelector('[data-retry-engine]');
+  if(retry) retry.addEventListener('click', function(){ state="loading"; render(); setTimeout(function(){ state="data"; render(); }, 700); });
+}
+
+function setScenario(s){ state = s; subview=null; render(); }
+
+document.getElementById('state').addEventListener('change', function(e){ setScenario(e.target.value); });
+
+buildNav();
+render();
+</script>
+</body>
+</html>
