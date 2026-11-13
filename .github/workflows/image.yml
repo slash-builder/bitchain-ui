@@ -1,0 +1,185 @@
+name: Image
+
+# Builds the demo image (demo/Dockerfile) for linux/amd64 and linux/arm64.
+#   pull_request        build only; never logs in to the registry, never pushes
+#   push to main        build, then publish ghcr.io/slash-builder/bitchain-ui:edge
+#   push of a version tag  build, then publish the version tags; tags are
+#                       vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-prerelease
+#                       and nothing else. `latest` moves only for a stable tag
+#                       (no pre-release part) whose commit is in main's history.
+#   workflow_dispatch   build; publishes only when run on main or on such a tag
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    # GitHub tag filters are globs, not regular expressions. These two only
+    # narrow what starts a run; the Publish job validates the exact form again.
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-*"
+  workflow_dispatch:
+
+# A new push to a pull request cancels the superseded run. Runs on main and on
+# tags are never cancelled, so a later run cannot cancel a publish half way
+# (after the push but before the attestation); it waits in the same group.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build (linux/amd64, linux/arm64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The Dockerfile has no RUN steps, so the arm64 build only copies files
+      # onto the arm64 base image and needs no emulation (no QEMU step).
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build (no push)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ./demo
+          platforms: linux/amd64,linux/arm64
+          push: false
+          provenance: false
+          sbom: false
+
+  publish:
+    name: Publish to GHCR
+    needs: build
+    # Never on pull requests. Only from this repository, and only from main or
+    # a v* tag.
+    if: >-
+      github.event_name != 'pull_request' &&
+      github.repository == 'slash-builder/bitchain-ui' &&
+      (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    env:
+      IMAGE: ghcr.io/slash-builder/bitchain-ui
+    steps:
+      # Full history, so the tagged commit can be compared with origin/main.
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Runs before the registry login. A tag ref must be strict semver. `latest`
+      # is allowed only for a stable tag (no pre-release part) whose commit is an
+      # ancestor of origin/main.
+      - name: Check the ref and decide whether latest may move
+        id: gate
+        run: |
+          latest=false
+          case "$GITHUB_REF" in
+            refs/heads/main)
+              ;;
+            refs/tags/*)
+              if ! [[ "$GITHUB_REF" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$ ]]; then
+                echo "::error::tag $GITHUB_REF is not vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-prerelease; nothing was published"
+                exit 1
+              fi
+              if [[ "$GITHUB_REF" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                if git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+                  latest=true
+                else
+                  echo "::warning::$GITHUB_SHA is not in the history of main: the version tags are published but latest is not moved"
+                fi
+              fi
+              ;;
+            *)
+              echo "::error::publishing is allowed only from main or a version tag; got $GITHUB_REF"
+              exit 1
+              ;;
+          esac
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image tags and labels
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.IMAGE }}
+          flavor: |
+            latest=false
+          tags: |
+            type=edge,branch=main
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}},enable=${{ !startsWith(github.ref, 'refs/tags/v0.') }}
+            type=raw,value=latest,enable=${{ steps.gate.outputs.latest == 'true' }}
+          labels: |
+            org.opencontainers.image.title=bitchain-ui
+            org.opencontainers.image.description=Static review prototype of the bitchain-ui inspection tool, served by nginx
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.licenses=Apache-2.0
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      - name: Build and push
+        id: push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ./demo
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # The GitHub attestation below is the provenance record, so the
+          # BuildKit provenance and SBOM attestations are not added as well.
+          provenance: false
+          sbom: false
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+          # Storage records need the artifact-metadata permission, which this
+          # job does not request.
+          create-storage-record: false
+
+      - name: Summary
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          {
+            echo "### Published image"
+            echo
+            echo "Digest: \`${DIGEST}\`"
+            echo
+            echo "Tags:"
+            echo
+            while IFS= read -r tag; do
+              [ -n "$tag" ] && echo "- \`${tag}\`"
+            done <<< "$TAGS"
+          } >> "$GITHUB_STEP_SUMMARY"
