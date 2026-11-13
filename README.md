@@ -64,6 +64,27 @@ Or just open `demo/index.html` in a browser. The nav switches screens; the
 **Prototype state** selector in the rail walks every screen through its
 empty / loading / error / fault / engine-unreachable states.
 
+## Container image
+
+The `demo/` prototype is also published as a container image,
+`ghcr.io/slash-builder/bitchain-ui`, built for `linux/amd64` and `linux/arm64`
+by the `Image` workflow (`.github/workflows/image.yml`).
+
+It is a static, unauthenticated prototype: nginx serving `demo/index.html`. It
+reads no store and has no login. It is a review prototype, not the shipped app.
+
+```sh
+docker run -p 8080:80 ghcr.io/slash-builder/bitchain-ui:edge   # → http://localhost:8080
+```
+
+| Tag | Meaning |
+|---|---|
+| `edge` | The latest commit on `main` |
+| `1.2.3`, `1.2`, `1` | A release, published when a `v1.2.3` tag is pushed (the bare major tag is skipped for `0.x` releases) |
+| `latest` | The most recent release that is not a pre-release |
+
+Pull requests build the image to check it, but do not publish it.
+
 ## Verification
 
 Both passes are a precondition for review (`dlockamy/skills/verify-html-prototype.md`):
