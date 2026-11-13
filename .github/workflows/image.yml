@@ -3,21 +3,29 @@ name: Image
 # Builds the demo image (demo/Dockerfile) for linux/amd64 and linux/arm64.
 #   pull_request        build only; never logs in to the registry, never pushes
 #   push to main        build, then publish ghcr.io/slash-builder/bitchain-ui:edge
-#   push of a v* tag    build, then publish the version tags and latest
-#   workflow_dispatch   build; publishes only when run on main or a v* tag
+#   push of a version tag  build, then publish the version tags; tags are
+#                       vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-prerelease
+#                       and nothing else. `latest` moves only for a stable tag
+#                       (no pre-release part) whose commit is in main's history.
+#   workflow_dispatch   build; publishes only when run on main or on such a tag
 
 on:
   pull_request:
   push:
     branches: [main]
-    tags: ["v*"]
+    # GitHub tag filters are globs, not regular expressions. These two only
+    # narrow what starts a run; the Publish job validates the exact form again.
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-*"
   workflow_dispatch:
 
-# Overlapping runs for the same ref cancel the older one. Tag runs have their
-# own ref, so a main push never cancels a release publish.
+# A new push to a pull request cancels the superseded run. Runs on main and on
+# tags are never cancelled, so a later run cannot cancel a publish half way
+# (after the push but before the attestation); it waits in the same group.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -68,10 +76,42 @@ jobs:
     env:
       IMAGE: ghcr.io/slash-builder/bitchain-ui
     steps:
+      # Full history, so the tagged commit can be compared with origin/main.
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
+
+      # Runs before the registry login. A tag ref must be strict semver. `latest`
+      # is allowed only for a stable tag (no pre-release part) whose commit is an
+      # ancestor of origin/main.
+      - name: Check the ref and decide whether latest may move
+        id: gate
+        run: |
+          latest=false
+          case "$GITHUB_REF" in
+            refs/heads/main)
+              ;;
+            refs/tags/*)
+              if ! [[ "$GITHUB_REF" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$ ]]; then
+                echo "::error::tag $GITHUB_REF is not vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-prerelease; nothing was published"
+                exit 1
+              fi
+              if [[ "$GITHUB_REF" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                if git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+                  latest=true
+                else
+                  echo "::warning::$GITHUB_SHA is not in the history of main: the version tags are published but latest is not moved"
+                fi
+              fi
+              ;;
+            *)
+              echo "::error::publishing is allowed only from main or a version tag; got $GITHUB_REF"
+              exit 1
+              ;;
+          esac
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -95,7 +135,7 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}},enable=${{ !startsWith(github.ref, 'refs/tags/v0.') }}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-') }}
+            type=raw,value=latest,enable=${{ steps.gate.outputs.latest == 'true' }}
           labels: |
             org.opencontainers.image.title=bitchain-ui
             org.opencontainers.image.description=Static review prototype of the bitchain-ui inspection tool, served by nginx
